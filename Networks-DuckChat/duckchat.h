@@ -30,6 +30,9 @@ typedef int text_t;
 #define REQ_LIST 5
 #define REQ_WHO 6
 #define REQ_KEEP_ALIVE 7 /* Only needed by graduate students */
+#define S2S_JOIN 8
+#define S2S_LEAVE 9
+#define S2S_SAY 10
 
 /* Define codes for text types.  These are the messages sent to the client. */
 #define TXT_SAY 0
@@ -99,6 +102,24 @@ struct text_say {
         char txt_username[USERNAME_MAX];
         char txt_text[SAY_MAX];
 } packed;
+
+struct s2s_say{
+    request_t req_type;
+    uint64_t id;
+    char txt_channel[CHANNEL_MAX];
+    char txt_username[USERNAME_MAX];
+    char txt_text[SAY_MAX];
+} packed;
+
+struct s2s_join{
+        request_t req_type; 
+        char channel[CHANNEL_MAX];
+} packed;
+
+struct s2s_leave{
+        request_t req_type;
+        char channel[CHANNEL_MAX];
+    } packed;
 
 /* This is a substructure used by struct text_list. */
 struct channel_info {

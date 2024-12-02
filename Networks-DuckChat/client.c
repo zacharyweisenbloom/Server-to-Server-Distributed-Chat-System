@@ -117,7 +117,7 @@ void handle_server_response(char *buffer) {
         default:
             fprintf(stderr, "Unknown response type: %d\n", response->txt_type);
     }
-    
+
     cooked_mode();
     printf("> %s", user_input);  
     fflush(stdout);
@@ -207,6 +207,7 @@ int send_logout(int sockfd, struct sockaddr_in *server_addr) {
 
     if (sendto(sockfd, &logout_request, sizeof(logout_request), 0, (struct sockaddr *)server_addr, sizeof(*server_addr)) < 0) {
         perror("Error sending logout request");
+        
         return -1;
     }
     return 1;
@@ -329,6 +330,7 @@ int main(int argc, char* argv[]){
     if(send_login(sockfd, &server_addr, username) < 0){
         exit(EXIT_FAILURE);
     }
+
     fd_set read_fds;
     struct timeval timeout;
     int max_fd = sockfd > STDIN_FILENO ? sockfd : STDIN_FILENO;
