@@ -63,7 +63,7 @@ Channel *channels;
 int user_count = 0;
 int channel_count = 0;
 struct sockaddr_in server_addr;
-
+struct sockaddr_in server_addr_for_ip_display;
 
 Neighbor* find_neighbor_by_address(struct sockaddr_in *addr){
     Neighbor* current = neighbors;
@@ -101,7 +101,6 @@ int is_subscribed(Neighbor *neighbor, const char *channel_name) {
 }
 
 void send_s2s_leave(int sockfd, struct sockaddr_in *addr, const char *channel_name) {
-    if (!addr || !channel_name) return;
 
     struct s2s_leave leave_message;
 
@@ -109,36 +108,36 @@ void send_s2s_leave(int sockfd, struct sockaddr_in *addr, const char *channel_na
     strncpy(leave_message.channel, channel_name, CHANNEL_MAX - 1);
     leave_message.channel[CHANNEL_MAX - 1] = '\0';
 
-    if (sendto(sockfd, &leave_message, sizeof(leave_message), 0,
-               (struct sockaddr *)addr, sizeof(*addr)) < 0) {
-        perror("Error sending S2S Leave");
+    if (sendto(sockfd, &leave_message, sizeof(leave_message), 0, (struct sockaddr *)addr, sizeof(*addr)) < 0) {
+        printf("Error sending S2S Leave");
     } else {
-        printf("%s:%d %s:%d send S2S Leave %s\n",
-        inet_ntoa(server_addr.sin_addr), ntohs(server_addr.sin_port), inet_ntoa(addr->sin_addr), ntohs(addr->sin_port),channel_name);
+        printf("%s:%d %s:%d send S2S Leave %s\n", inet_ntoa(server_addr.sin_addr), ntohs(server_addr.sin_port), inet_ntoa(addr->sin_addr), ntohs(addr->sin_port),channel_name);
     }
     
 }
 
-int should_send_leave(char *channel_name) {
+//here is a function to check if the conditions for pruning have been met 
+int should_send_leave(char *channel_name) { 
+
     Channel *channel = find_channel_by_name(channel_name);
-    int subscribed_neighbors = 0;
-    int has_local_users = 0;
+    int sub_neighbors = 0;
+    int at_least_1_local_user = 0;
 
     //if channel exists and has local users 
     if (channel && channel->user_list.head) {
-        has_local_users = 1;
+        at_least_1_local_user = 1;
     }
 
     //count subscribed users to channel
     Neighbor *current = neighbors;
     while (current) {
         if (is_subscribed(current, channel_name)) {
-            subscribed_neighbors++;
+            sub_neighbors++;
         }
         current = current->next;
     }
-    //if has local users 
-    return (!has_local_users && subscribed_neighbors == 1);
+    
+    return ((at_least_1_local_user == 0) && (sub_neighbors == 1));
 }
 
 void leave_channel(int sockfd, Neighbor *neighbor, char *channel_name) {
@@ -161,7 +160,7 @@ void leave_channel(int sockfd, Neighbor *neighbor, char *channel_name) {
                    inet_ntoa(neighbor->addr.sin_addr), ntohs(neighbor->addr.sin_port), channel_name);*/
             free(current);
 
-            // Check if this server should send an S2S Leave
+            // Check if thi
 
             return; 
         }
@@ -181,14 +180,11 @@ void handle_s2s_leave(int sockfd, struct sockaddr_in *sender, struct s2s_leave *
     // Find the neighbor corresponding to the sender
     Neighbor *neighbor = find_neighbor_by_address(sender);
     if (!neighbor) {
-        printf("Unknown neighbor %s:%d sent S2S Leave\n",
-               inet_ntoa(sender->sin_addr), ntohs(sender->sin_port));
+        printf("unknown neighbor");
         return;
     }
 
-    printf("%s:%d %s:%d recv S2S Leave %s\n",
-           inet_ntoa(server_addr.sin_addr), ntohs(server_addr.sin_port),
-           inet_ntoa(sender->sin_addr), ntohs(sender->sin_port),
+    printf("%s:%d %s:%d recv S2S Leave %s\n", inet_ntoa(server_addr_for_ip_display.sin_addr), ntohs(server_addr.sin_port), inet_ntoa(sender->sin_addr), ntohs(sender->sin_port),
            channel_name);
 
     // Remove the neighbor's subscription to the channel
@@ -224,7 +220,7 @@ void subscribe_all_neighbors(char* channel_name){
     }
 }
 
-void broadcast_s2s_join(int sockfd, struct sockaddr_in *sender ,char* channel_name){
+void broadcast_s2s_join(int sockfd, struct sockaddr_in *sender ,char* channel_name, int is_soft_join){
     struct request_join join_message;
     join_message.req_type = S2S_JOIN;
     strncpy(join_message.req_channel, channel_name, CHANNEL_MAX-1);
@@ -237,15 +233,23 @@ void broadcast_s2s_join(int sockfd, struct sockaddr_in *sender ,char* channel_na
     socklen_t addr_len = sizeof(actual_addr);
     getsockname(sockfd, (struct sockaddr *)&actual_addr, &addr_len);
 
-    //if the sender is NULL than the broadcast is triggered by a local join 
+    //if the sender is NULL than the broadcast was triggered by a local join 
     while(current){
         if(find_neighbor_by_address(&(current->addr))){
             if (!sender || current->addr.sin_addr.s_addr != sender->sin_addr.s_addr || current->addr.sin_port != sender->sin_port){
                 sendto(sockfd, &join_message, sizeof(join_message), 0, (struct sockaddr*)&current->addr, sizeof(current->addr));
-                printf("%s:%d %s:%d send S2S Join %s\n",
-                   inet_ntoa(actual_addr.sin_addr), ntohs(actual_addr.sin_port),
+                if(is_soft_join){
+                    printf("%s:%d %s:%d send S2S soft Join %s\n",
+                   inet_ntoa(server_addr_for_ip_display.sin_addr), ntohs(actual_addr.sin_port),
                    inet_ntoa(current->addr.sin_addr), ntohs(current->addr.sin_port),
                    channel_name);
+                }else{
+                 printf("%s:%d %s:%d send S2S Join %s\n",
+                   inet_ntoa(server_addr_for_ip_display.sin_addr), ntohs(actual_addr.sin_port),
+                   inet_ntoa(current->addr.sin_addr), ntohs(current->addr.sin_port),
+                   channel_name);
+                }
+
             }
         }
         current = current->next; 
@@ -261,20 +265,16 @@ void broadcast_s2s_say(int sockfd, struct s2s_say* message, struct sockaddr_in* 
             current = current->next;
             continue;
         }
-        if (is_subscribed(current, message->txt_channel) &&
-            (!sender || current->addr.sin_addr.s_addr != sender->sin_addr.s_addr || current->addr.sin_port != sender->sin_port)) {
-            
-            if (sendto(sockfd, message, sizeof(*message), 0, 
-                       (struct sockaddr*)&current->addr, sizeof(current->addr)) < 0) {
+        if (is_subscribed(current, message->txt_channel) && (!sender || current->addr.sin_addr.s_addr != sender->sin_addr.s_addr || current->addr.sin_port != sender->sin_port)) {
+            if (sendto(sockfd, message, sizeof(*message), 0, (struct sockaddr*)&current->addr, sizeof(current->addr)) < 0) {
                 perror("Error broadcasting S2S_SAY");
             } else {
-                printf("%s:%d %s:%d send S2S_SAY %s \"%s\"\n",
-                       inet_ntoa(server_addr.sin_addr), ntohs(server_addr.sin_port),
-                       inet_ntoa(current->addr.sin_addr), ntohs(current->addr.sin_port),
-                       message->txt_channel, message->txt_text);
+                printf("%s:%d %s:%d send S2S_SAY %s \"%s\"\n", inet_ntoa(server_addr_for_ip_display.sin_addr), ntohs(server_addr.sin_port), inet_ntoa(current->addr.sin_addr), ntohs(current->addr.sin_port),
+                    message->txt_channel, message->txt_text);
+
             }
         }else{
-            printf("checked!");
+            printf("checked, not subscribed!");
         }
         current = current->next;
     }
@@ -290,7 +290,7 @@ int add_channel_sub(char* channel_name){
     }
     channel_sub* new_sub = (channel_sub*)malloc(sizeof(channel_sub));
     if(!new_sub){
-        printf("Failed ");
+        printf("Failed bad things happend, everybody take cover");
         return -1;
     }
 
@@ -346,7 +346,7 @@ void handle_s2s_join(int sockfd, struct sockaddr_in *sender, struct request_join
 
     char* channel_name = buffer->req_channel;
     Neighbor* send_neighbor = find_neighbor_by_address(sender);
-    if (send_neighbor) {
+    if (send_neighbor) {//check if there is a neighbor ie if its a join sent from a noneighbor 
         channel_sub *current = subscriptions;
         while (current) {
             if (strcmp(current->name, channel_name) == 0) {
@@ -357,18 +357,14 @@ void handle_s2s_join(int sockfd, struct sockaddr_in *sender, struct request_join
         }
     }
 
-    if(find_neighbor_by_address(sender)){
-        add_channel_to_neighbor(send_neighbor, channel_name);
+    if(find_neighbor_by_address(sender)){//check if neighbor exists
+        add_channel_to_neighbor(send_neighbor, channel_name);// still subscribe neighbor even if channel already exists 
         if(add_channel_sub(channel_name)){
-            //printf("channel_added!");
-            subscribe_all_neighbors(channel_name);
-            broadcast_s2s_join(sockfd, sender ,channel_name);
+            subscribe_all_neighbors(channel_name); //subscribe everybody if this is a new channel join 
+            broadcast_s2s_join(sockfd, sender ,channel_name, 0); //broadcast since this is a new join
         }
     }
-    printf("%s:%d %s:%d recv S2S Join %s\n",
-            inet_ntoa(server_addr.sin_addr), ntohs(server_addr.sin_port),
-           inet_ntoa(sender->sin_addr), ntohs(sender->sin_port),
-           
+    printf("%s:%d %s:%d recv S2S Join %s\n", inet_ntoa(server_addr_for_ip_display.sin_addr), ntohs(server_addr.sin_port), inet_ntoa(sender->sin_addr), ntohs(sender->sin_port),
            channel_name);
 
 }
@@ -381,7 +377,7 @@ void send_error(int sockfd, struct sockaddr_in *client_addr, socklen_t client_le
     response.txt_error[SAY_MAX - 1] = '\0'; 
 
     if (sendto(sockfd, &response, sizeof(struct text_error), 0, (struct sockaddr *)client_addr, client_len) < 0) {
-        perror("Error sending error response");
+        printf("Error sending error response lol");
     } else {
         printf("Error sent to client %s:%d: %s\n", inet_ntoa(client_addr->sin_addr), ntohs(client_addr->sin_port), response.txt_error);
     }
@@ -390,14 +386,11 @@ void send_error(int sockfd, struct sockaddr_in *client_addr, socklen_t client_le
 uint64_t generate_id(){
     uint64_t id;
     FILE *urandom = fopen("/dev/urandom", "r");
-    if(!urandom){
-        printf("Failed to open /dev/urandom");
-        exit(EXIT_FAILURE);
-    }
     fread(&id, sizeof(id), 1, urandom);
     fclose(urandom);
     return id;
 }
+
 void add_message_id(uint64_t id) {
     MessageID *new_id = (MessageID*)malloc(sizeof(MessageID));
     new_id->id = id;
@@ -461,7 +454,7 @@ void handle_s2s_say(int sockfd, struct sockaddr_in *sender, struct s2s_say*buffe
         
         
         printf("%s:%d %s:%d recv duplicate S2S_SAY %s \"%s\"\n",
-               inet_ntoa(server_addr.sin_addr), ntohs(server_addr.sin_port),
+               inet_ntoa(server_addr_for_ip_display.sin_addr), ntohs(server_addr.sin_port),
                inet_ntoa(sender->sin_addr), ntohs(sender->sin_port),
                buffer->txt_channel, buffer->txt_text);
 
@@ -476,10 +469,8 @@ void handle_s2s_say(int sockfd, struct sockaddr_in *sender, struct s2s_say*buffe
     add_message_id(buffer->id);
 
     // Log the received message
-    printf("%s:%d %s:%d recv S2S_SAY %s \"%s\"\n",
-           inet_ntoa(server_addr.sin_addr), ntohs(server_addr.sin_port),
-           inet_ntoa(sender->sin_addr), ntohs(sender->sin_port),
-           buffer->txt_channel, buffer->txt_text);
+    printf("%s:%d %s:%d recv S2S_SAY %s \"%s\"\n", inet_ntoa(server_addr_for_ip_display.sin_addr), ntohs(server_addr.sin_port), inet_ntoa(sender->sin_addr), ntohs(sender->sin_port),
+        buffer->txt_channel, buffer->txt_text);
 
     Channel* channel = find_channel_by_name(buffer->txt_channel);
     if (channel) {
@@ -493,7 +484,7 @@ void handle_s2s_say(int sockfd, struct sockaddr_in *sender, struct s2s_say*buffe
         while (current_user) {
             if (sendto(sockfd, &response, sizeof(response), 0,
                        (struct sockaddr*)&current_user->addr, sizeof(current_user->addr)) < 0) {
-                perror("Error sending S2S_SAY to local user");
+                printf("Error sending S2S_SAY to local user");
             }
             current_user = current_user->next;
         }
@@ -510,15 +501,19 @@ void handle_s2s_say(int sockfd, struct sockaddr_in *sender, struct s2s_say*buffe
 }
 
 void add_neighbor(char* ip, int port){
-    char resolved_ip[INET_ADDRSTRLEN];
+
+    char resolved_ip[16];
     if (strcmp(ip, "localhost") == 0) {
         strncpy(resolved_ip, "127.0.0.1", sizeof(resolved_ip));
         resolved_ip[sizeof(resolved_ip) - 1] = '\0';
     }
+    
     Neighbor* neighbor_new = (Neighbor*)malloc(sizeof(Neighbor));
     neighbor_new->addr.sin_family = AF_INET;
     neighbor_new->addr.sin_port = htons(port);
+
     inet_pton(AF_INET, resolved_ip, &neighbor_new->addr.sin_addr);
+
     neighbor_new->next = neighbors;
     neighbors = neighbor_new;
     printf("Added neighbor %s:%d\n", resolved_ip, port);
@@ -659,7 +654,7 @@ Channel* join_channel(int sockfd, char *channel_name, User *user) {
 
     if(add_channel_sub(channel_name)){
         subscribe_all_neighbors(channel_name);
-        broadcast_s2s_join(sockfd, NULL ,channel_name);
+        broadcast_s2s_join(sockfd, NULL ,channel_name, 0);
     }
     
     return new_channel;
@@ -835,16 +830,19 @@ int main(int argc, char *argv[]){
         strncpy(arg, "127.0.0.1", sizeof(arg));
         arg[sizeof(arg)-1] = '\0';
         server_addr.sin_addr.s_addr = inet_addr(arg);
+        server_addr_for_ip_display.sin_addr.s_addr = inet_addr(arg);
     }else{
         server_addr.sin_addr.s_addr = inet_addr(argv[1]);
     }
     
     server_addr.sin_port = htons(atoi(argv[2]));
+
+    //use this if you need to accept connections from outside the network 
     server_addr.sin_addr.s_addr = INADDR_ANY;
 
 
 
-     if (bind(sockfd, (const struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+    if (bind(sockfd, (const struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
         perror("bind failed");
         close(sockfd);
         exit(EXIT_FAILURE);
@@ -871,12 +869,12 @@ int main(int argc, char *argv[]){
 
          time_t now = time(NULL);
 
-        // Periodically send S2S_JOIN for each subscribed channel
-        if (difftime(now,last_renewal) >= 5) {
+        //send join every 60 seconds.
+        if (difftime(now,last_renewal) >= 60) {
             channel_sub *current = subscriptions;
             while (current) {
                 subscribe_all_neighbors(current->name);
-                broadcast_s2s_join(sockfd, NULL, current->name);
+                broadcast_s2s_join(sockfd, NULL, current->name, 1);
                 current = current->next;
             }
             last_renewal = now;
@@ -886,16 +884,17 @@ int main(int argc, char *argv[]){
         // Check for expired subscriptions
         while (current) {
             
-            if (difftime(now,current->last_renewed) > 10) {
+            if (difftime(now,current->last_renewed) > 120) {
                 printf("now - current %f", difftime(now, current->last_renewed));
-                //printf("Subscription expired for channel %s. Sending S2S_LEAVE.\n", current->name);
-                Neighbor *n = neighbors;
-                while (n) {
-                    if (is_subscribed(n, current->name)) {
-                        send_s2s_leave(sockfd, &n->addr, current->name);
-                        leave_channel(sockfd, n, current->name);
+                
+                //loop through every neighbor, check if it is subscribed and if it is send a leave
+                Neighbor *neighbor = neighbors;
+                while (neighbor) {
+                    if (is_subscribed(neighbor, current->name)) { 
+                        send_s2s_leave(sockfd, &neighbor->addr, current->name); //send leave 
+                        leave_channel(sockfd, neighbor, current->name); //remove locally in forwarding table 
                     }
-                    n = n->next;
+                    neighbor = neighbor->next; 
                 }
                 remove_channel_sub(current->name); //channel did not receive soft join so remove it from subscriptions list
             }
@@ -925,6 +924,8 @@ int main(int argc, char *argv[]){
     close(sockfd);
     return 0;
 }
+
+
 
 
 
