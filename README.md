@@ -1,7 +1,7 @@
-# Server-to-Server Chat System
+# Server-to-Server-Distributed-Chat-System
 
 ## Overview
-This is a distributed chat system that enables seamless communication between multiple servers, allowing users on different servers to interact as if they were on the same instance. This project extends the functionality of the original DuckChat implementation by introducing an efficient server-to-server protocol that dynamically forms message distribution trees, ensuring optimized message propagation and loop prevention.
+Server-to-Server-Distributed-Chat-System is a distributed chat system that enables seamless communication between multiple servers, allowing users on different servers to interact as if they were on the same instance. This project extends the functionality of a basic chat implementation by introducing an efficient server-to-server protocol that dynamically forms message distribution trees, ensuring optimized message propagation and loop prevention.
 
 ## Features
 - **Decentralized Server Network:** Supports multiple interconnected servers.
@@ -27,27 +27,27 @@ This is a distributed chat system that enables seamless communication between mu
 Clone the repository and navigate to the project directory:
 ```sh
 $ git clone <repository_url>
-$ cd duckchat-server
+$ cd Server-to-Server-Distributed-Chat-System
 ```
 Compile the server using:
 ```sh
 $ make
 ```
-This will generate the executable `duckchat_server`.
+This will generate the executable `server_chat`.
 
 ## Usage
 ### Starting a Server
 To start a standalone server:
 ```sh
-$ ./duckchat_server <server_ip> <port>
+$ ./server_chat <server_ip> <port>
 ```
 To start a server with neighbors for inter-server communication:
 ```sh
-$ ./duckchat_server <server_ip> <port> <neighbor_ip_1> <neighbor_port_1> <neighbor_ip_2> <neighbor_port_2> ...
+$ ./server_chat <server_ip> <port> <neighbor_ip_1> <neighbor_port_1> <neighbor_ip_2> <neighbor_port_2> ...
 ```
 Example:
 ```sh
-$ ./duckchat_server 127.0.0.1 4000 127.0.0.1 5000 127.0.0.1 6000
+$ ./server_chat 127.0.0.1 4000 127.0.0.1 5000 127.0.0.1 6000
 ```
 
 ### Client Interaction
@@ -59,12 +59,6 @@ Clients communicate with the server via UDP messages, supporting the following o
 - **Who**: Lists users in a channel.
 - **Say**: Sends a message to a channel.
 - **Logout**: Users disconnect from the server.
-
-### Server-to-Server Communication
-The protocol supports the following inter-server messages:
-- **S2S_JOIN**: Notifies neighboring servers when a new user joins a channel.
-- **S2S_LEAVE**: Notifies neighbors when a server should leave a channel.
-- **S2S_SAY**: Propagates messages efficiently across the network while preventing loops.
 
 ## Technical Details
 ### Data Structures
@@ -79,11 +73,11 @@ The protocol supports the following inter-server messages:
 
 ### Message Flow
 1. **User joins a channel:**
-   - Server broadcasts `S2S_JOIN` messages to neighbors.
+   - Server notifies neighbors of the new subscription.
    - If a neighbor is not subscribed, it forwards the message to its neighbors.
 2. **User sends a message:**
-   - Message propagates along the subscription tree using `S2S_SAY`.
-   - If a loop is detected, the extra link is removed with an `S2S_LEAVE`.
+   - Message propagates along the subscription tree efficiently.
+   - If a loop is detected, the extra link is removed.
 3. **Server Pruning:**
    - Servers remove themselves if they have no users and only one subscribed neighbor.
    - Soft-state mechanism ensures inactive servers automatically disconnect.
@@ -91,9 +85,9 @@ The protocol supports the following inter-server messages:
 ### Logging and Debugging
 The server outputs status messages for debugging:
 ```sh
-127.0.0.1:4000 127.0.0.1:5000 send S2S_JOIN Common
-127.0.0.1:5000 127.0.0.1:6000 recv S2S_SAY Agthorr Common "hello"
-127.0.0.1:6000 127.0.0.1:5000 send S2S_LEAVE Common
+127.0.0.1:4000 127.0.0.1:5000 send JOIN Common
+127.0.0.1:5000 127.0.0.1:6000 recv MESSAGE Agthorr Common "hello"
+127.0.0.1:6000 127.0.0.1:5000 send LEAVE Common
 ```
 
 ## Testing
@@ -102,9 +96,6 @@ The project includes scripts to test interoperability between multiple servers. 
 $ ./client 127.0.0.1 4000 username
 ```
 To simulate multiple servers, start multiple instances with different ports and test message propagation.
-
-## Contributors
-- **Zachary Weisenbloom**
 
 
 
