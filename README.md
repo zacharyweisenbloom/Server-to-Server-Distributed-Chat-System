@@ -1,7 +1,7 @@
 # Server-to-Server-Distributed-Chat-System
 
 ## Overview
-Server-to-Server-Distributed-Chat-System is a distributed chat system that enables seamless communication between multiple servers, allowing users on different servers to interact as if they were on the same instance. This project extends the functionality of a basic chat implementation by introducing an efficient server-to-server protocol that dynamically forms message distribution trees, ensuring optimized message propagation and loop prevention.
+This is a distributed chat system that enables seamless communication between multiple servers, allowing users on different servers to interact as if they were on the same instance. This project extends the functionality of a basic chat implementation by introducing an efficient server-to-server protocol that dynamically forms message distribution trees, ensuring optimized message propagation and loop prevention.
 
 ## Features
 - **Decentralized Server Network:** Supports multiple interconnected servers.
